@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>AI Story Video Generator</title>
+
+<style>
+body {
+  background: #020617;
+  color: white;
+  font-family: Arial;
+  display: flex;
+  justify-content: center;
+}
+
+.box {
+  width: 420px;
+}
+
+textarea, input, select {
+  width: 100%;
+  margin: 5px 0;
+  padding: 10px;
+  border-radius: 10px;
+  border: none;
+}
+
+button {
+  width: 100%;
+  padding: 10px;
+  margin-top: 5px;
+  border-radius: 10px;
+  border: none;
+  background: #22c55e;
+  font-weight: bold;
+}
+
+canvas {
+  width: 100%;
+  margin-top: 10px;
+  background: black;
+}
+</style>
+</head>
+
+<body>
+<div class="box">
+
+<h2>🎬 AI Story Video</h2>
+
+<input id="apiKey" placeholder="API Key">
+<textarea id="text" placeholder="Dán truyện..."></textarea>
+
+<select id="voice">
+  <option value="alloy">Alloy</option>
+  <option value="verse">Verse</option>
+  <option value="aria">Aria</option>
+</select>
+
+<select id="emotion">
+  <option value="story">Kể chuyện</option>
+  <option value="sad">Buồn</option>
+  <option value="cold">Lạnh</option>
+</select>
+
+<select id="bg">
+  <option value="black">Nền đen</option>
+  <option value="gradient">Gradient</option>
+</select>
+
+<button onclick="generate()">🎙 Tạo giọng + Video</button>
+<button onclick="downloadVideo()">📥 Tải Video</button>
+
+<audio id="audio" controls></audio>
+<canvas id="canvas" width="360" height="640"></canvas>
+
+</div>
+
+<script>
+let mediaRecorder;
+let recordedChunks = [];
+
+function splitText(text) {
+  return text.match(/[^\.!\?]+[\.!\?]+/g) || [text];
+}
+
+function emotionText(text, emo) {
+  if (emo === "sad") return "Giọng buồn: " + text;
+  if (emo === "cold") return "Giọng lạnh: " + text;
+  return "Kể chuyện: " + text;
+}
+
+async function tts(apiKey, text, voice) {
+  const res = await fetch("https://api.openai.com/v1/audio/speech", {
+    method: "POST",
+    headers: {
+      "Authorization": "Bearer " + apiKey,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini-tts",
+      voice: voice,
+      input: text
+    })
+  });
+  return await res.arrayBuffer();
+}
+
+async function generate() {
+  const apiKey = apiKeyEl.value;
+  const text = textEl.value;
+  const voice = voiceEl.value;
+  const emo = emotionEl.value;
+
+  const parts = splitText(text);
+  let buffers = [];
+
+  for (let p of parts) {
+    const audio = await tts(apiKey, emotionText(p, emo), voice);
+    buffers.push(audio);
+  }
+
+  const blob = new Blob(buffers, { type: "audio/mp3" });
+  const url = URL.createObjectURL(blob);
+  audio.src = url;
+  audio.play();
+
+  createVideo(text);
+}
+
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+function draw(text, bgType) {
+  if (bgType === "gradient") {
+    let g = ctx.createLinearGradient(0,0,0,640);
+    g.addColorStop(0,"#0ea5e9");
+    g.addColorStop(1,"#9333ea");
+    ctx.fillStyle = g;
+  } else {
+    ctx.fillStyle = "black";
+  }
+
+  ctx.fillRect(0,0,360,640);
+
+  ctx.fillStyle = "white";
+  ctx.font = "20px Arial";
+
+  wrapText(text, 20, 100, 320, 28);
+}
+
+function wrapText(text, x, y, maxWidth, lineHeight) {
+  let words = text.split(" ");
+  let line = "";
+
+  for(let n=0; n<words.length; n++) {
+    let testLine = line + words[n] + " ";
+    let metrics = ctx.measureText(testLine);
+    if(metrics.width > maxWidth && n > 0) {
+      ctx.fillText(line, x, y);
+      line = words[n] + " ";
+      y += lineHeight;
+    } else {
+      line = testLine;
+    }
+  }
+  ctx.fillText(line, x, y);
+}
+
+function createVideo(text) {
+  const stream = canvas.captureStream(30);
+
+  recordedChunks = [];
+  mediaRecorder = new MediaRecorder(stream);
+
+  mediaRecorder.ondataavailable = e => {
+    if (e.data.size > 0) recordedChunks.push(e.data);
+  };
+
+  mediaRecorder.start();
+
+  let i = 0;
+  const bg = bgEl.value;
+
+  const interval = setInterval(() => {
+    draw(text.split(".")[i] || "", bg);
+    i++;
+    if (i > text.split(".").length) {
+      clearInterval(interval);
+      mediaRecorder.stop();
+    }
+  }, 2000);
+}
+
+function downloadVideo() {
+  const blob = new Blob(recordedChunks, { type: "video/webm" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "story.webm";
+  a.click();
+}
+
+const apiKeyEl = document.getElementById("apiKey");
+const textEl = document.getElementById("text");
+const voiceEl = document.getElementById("voice");
+const emotionEl = document.getElementById("emotion");
+const bgEl = document.getElementById("bg");
+const audio = document.getElementById("audio");
+</script>
+
+</body>
+</html>
